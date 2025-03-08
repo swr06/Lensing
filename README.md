@@ -11,7 +11,7 @@
 </div>
 </br>
 
-A simple visualization tool demonstrating how massive objects bend light paths according to general relativity. Built using OpenGL and GLSL shaders in C++, with the Candela framework handling core functionality.
+A simple visualization tool demonstrating how massive objects bend light paths according to general relativity. Built using Modern OpenGL and C++17 (on my framework, Candela).
 
 </div>
 
