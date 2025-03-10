@@ -252,6 +252,9 @@
     <ClInclude Include="Core\Physics\PhysicsApi.h">
       <Filter>Source Files\Lumen\Lumen-Core\Physics</Filter>
     </ClInclude>
+    <ClInclude Include="Core\stb_image_write.h">
+      <Filter>Source Files\Lumen</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Dependencies\imgui\imgui.cpp">
@@ -419,6 +422,9 @@
       <Filter>Source Files\Lumen\Lumen-Core\Lumen-Shaders</Filter>
     </None>
     <None Include="Core\Shaders\FBOVert.glsl">
+      <Filter>Source Files\Lumen\Lumen-Core\Lumen-Shaders</Filter>
+    </None>
+    <None Include="Core\Shaders\Render.glsl">
       <Filter>Source Files\Lumen\Lumen-Core\Lumen-Shaders</Filter>
     </None>
   </ItemGroup>

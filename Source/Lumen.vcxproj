@@ -186,6 +186,7 @@
     <ClInclude Include="Core\Pipeline.h" />
     <ClInclude Include="Core\ShaderManager.h" />
     <ClInclude Include="Core\SphereLight.h" />
+    <ClInclude Include="Core\stb_image_write.h" />
     <ClInclude Include="Core\TAAJitter.h" />
     <ClInclude Include="Core\Threadpool.h" />
     <ClInclude Include="Core\Tonemap.h" />
@@ -279,6 +280,7 @@
     <None Include="Core\Shaders\2DElementShaderVert.glsl" />
     <None Include="Core\Shaders\BasicBlit.glsl" />
     <None Include="Core\Shaders\FBOVert.glsl" />
+    <None Include="Core\Shaders\Render.glsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

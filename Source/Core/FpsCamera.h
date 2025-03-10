@@ -11,7 +11,7 @@ namespace Candela
 	class FPSCamera
 	{
 	public : 
-		FPSCamera(float fov, float aspect, float zNear = 0.1f, float zFar = 1000.0f, float sensitivity = 0.25f);
+		FPSCamera(float fov = 90., float aspect = 1., float zNear = 0.1f, float zFar = 1000.0f, float sensitivity = 0.25f);
 		~FPSCamera();
 
 		void UpdateOnMouseMovement(double xpos, double ypos);
@@ -142,6 +142,8 @@ namespace Candela
 		}
 
 		float _Sensitivity = 0.2;
+
+		float Timestamp = 0.;
 
 	private : 
 

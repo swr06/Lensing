@@ -39,6 +39,9 @@
 
 #include <implot.h>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 // Externs.
 int __TotalMeshesRendered = 0;
 int __MainViewMeshesRendered = 0;
@@ -53,6 +56,68 @@ static glm::vec3 _SunDirection = glm::vec3(0.1f, -1.0f, 0.1f);
 float CurrentTime = glfwGetTime();
 float Frametime = 0.0f;
 float DeltaTime = 0.0f;
+
+bool StartRecording = false;
+bool PlayingRecording = false;
+int Playframe = 0;
+std::vector<Candela::FPSCamera> RecordingCameras;
+
+void WriteCamerasToFile(const std::vector<Candela::FPSCamera>& cameras, const std::string& filename) {
+	std::ofstream outFile(filename, std::ios::binary);
+	if (!outFile) {
+		std::cerr << "Error opening file for writing: " << filename << '\n';
+		return;
+	}
+
+	size_t count = cameras.size();
+	outFile.write(reinterpret_cast<const char*>(&count), sizeof(count));  // Write vector size
+
+	if (count > 0) {
+		outFile.write(reinterpret_cast<const char*>(cameras.data()), count * sizeof(Camera));
+	}
+
+	outFile.close();
+}
+
+std::vector<Candela::FPSCamera> ReadCamerasFromFile(const std::string& filename) {
+	std::ifstream inFile(filename, std::ios::binary);
+	if (!inFile) {
+		std::cerr << "Error opening file for reading: " << filename << '\n';
+		return {};
+	}
+
+	size_t count;
+	inFile.read(reinterpret_cast<char*>(&count), sizeof(count));  // Read vector size
+
+	std::vector<Candela::FPSCamera> cameras(count);
+	if (count > 0) {
+		inFile.read(reinterpret_cast<char*>(cameras.data()), count * sizeof(Camera));
+	}
+
+	inFile.close();
+	return cameras;
+}
+
+void SaveFBOToJPG(GLuint fbo, int width, int height, int frameNumber) {
+	std::vector<unsigned char> pixels(width * height * 4);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	std::vector<unsigned char> flippedPixels(width * height * 4);
+
+	for (int y = 0; y < height; ++y) {
+		std::memcpy(&flippedPixels[y * width * 4], &pixels[(height - 1 - y) * width * 4], width * 4);
+	}
+
+	std::string filename = "Frames/" + std::to_string(frameNumber) + ".jpg";
+	stbi_write_jpg(filename.c_str(), width, height, 4, flippedPixels.data(), width * 4);
+
+	std::cout << "Saved frame to " << filename << std::endl;
+}
+
 
 static double RoundToNearest(double n, double x) {
 	return round(n / x) * x;
@@ -87,7 +152,8 @@ public:
 
 	void OnImguiRender(double ts) override
 	{
-		ImGui::Begin("Candela");
+		ImGui::Begin("--The CANDELA Engine--");
+		ImGui::NewLine();
 		ImGui::Text("FPS : %.2f", ImGui::GetIO().Framerate);
 		ImGui::Text("Total Meshes Rendered : %d", __TotalMeshesRendered);
 		ImGui::Text("Main View Meshes Rendered : %d", __MainViewMeshesRendered);
@@ -95,6 +161,19 @@ public:
 		ImGui::Text("Window Size : %d x %d", GetWidth(), GetHeight());
 		ImGui::Text("Camera Position : %f %f %f", Camera.GetPosition().x, Camera.GetPosition().y, Camera.GetPosition().z);
 		ImGui::Text("Camera Front : %f %f %f", Camera.GetFront().x, Camera.GetFront().y, Camera.GetFront().z);
+
+		if (StartRecording) {
+			ImGui::NewLine();
+			ImGui::NewLine();
+			ImGui::Text("RECORDING...");
+		}
+
+		if (PlayingRecording) {
+			ImGui::NewLine();
+			ImGui::NewLine();
+			ImGui::Text("PLAYING (and saving) RECORDING...");
+		}
+
 		ImGui::End();
 	}
 
@@ -134,6 +213,25 @@ public:
 		{
 			Candela::ShaderManager::ForceRecompileShaders();
 		}
+		
+		if (e.type == Candela::EventTypes::KeyPress && e.key == GLFW_KEY_F3)
+		{
+			if (StartRecording) {
+				StartRecording = false;
+				WriteCamerasToFile(RecordingCameras, "data.bin");
+			}
+			else {
+				RecordingCameras.clear();
+				StartRecording = true;
+			}
+		}
+
+
+		if (e.type == Candela::EventTypes::KeyPress && e.key == GLFW_KEY_F4 && !StartRecording)
+		{
+			PlayingRecording = true;
+			Playframe = 0;
+		}
 
 		if (e.type == Candela::EventTypes::KeyPress && e.key == GLFW_KEY_V && this->GetCurrentFrame() > 5)
 		{
@@ -147,7 +245,6 @@ public:
 
 
 };
-
 
 
 void Candela::StartPipeline()
@@ -196,7 +293,8 @@ void Candela::StartPipeline()
 	// Create Shaders
 	ShaderManager::CreateShaders();
 
-	GLClasses::Shader& BasicBlitShader = ShaderManager::GetShader("BASIC_BLIT");
+	GLClasses::Shader& BlitShader = ShaderManager::GetShader("BASIC_BLIT");
+	GLClasses::Shader& RenderShader = ShaderManager::GetShader("RENDER");
 
 	// Matrices
 	glm::mat4 PreviousView;
@@ -205,8 +303,8 @@ void Candela::StartPipeline()
 	glm::mat4 Projection;
 	glm::mat4 InverseView;
 	glm::mat4 InverseProjection;
-	
-	
+
+	GLClasses::Framebuffer RecordingFBO(1920, 1080, { GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, true, true }, true, false);
 
 	while (!glfwWindowShouldClose(app.GetWindow()))
 	{
@@ -224,25 +322,37 @@ void Candela::StartPipeline()
 		glDisable(GL_BLEND);
 		glDisable(GL_CULL_FACE);
 
+		if (StartRecording) {
+			RecordingCameras.push_back(Camera);
+		}
+
+		Camera.Timestamp = glfwGetTime();
 
 		// Blit! 
 
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glViewport(0, 0, app.GetWidth(), app.GetHeight());
+		// Play recording 
+		if (PlayingRecording && RecordingCameras.size()) {
+			Candela::FPSCamera* c = &Camera;
+			*c = RecordingCameras[Playframe % RecordingCameras.size()];
+			Playframe += 1;
+		}
 
-		BasicBlitShader.Use();
 
-		BasicBlitShader.SetFloat("u_Time", glfwGetTime());
-		BasicBlitShader.SetInteger("u_Frame", app.GetCurrentFrame());
-		BasicBlitShader.SetInteger("u_Skymap", 2);
-		BasicBlitShader.SetInteger("u_CurrentFrame", app.GetCurrentFrame());
-		BasicBlitShader.SetMatrix4("u_ViewProjection", Camera.GetViewProjection());
-		BasicBlitShader.SetMatrix4("u_Projection", Camera.GetProjectionMatrix());
-		BasicBlitShader.SetMatrix4("u_View", Camera.GetViewMatrix());
-		BasicBlitShader.SetMatrix4("u_InverseProjection", glm::inverse(Camera.GetProjectionMatrix()));
-		BasicBlitShader.SetMatrix4("u_InverseView", glm::inverse(Camera.GetViewMatrix()));
-		BasicBlitShader.SetFloat("u_Width", float(app.GetWidth()));
-		BasicBlitShader.SetFloat("u_Height", float(app.GetHeight()));
+		RecordingFBO.Bind();
+
+		glDisable(GL_CULL_FACE);
+
+		RenderShader.Use();
+
+		RenderShader.SetFloat("u_Time", Camera.Timestamp);
+		RenderShader.SetInteger("u_Skymap", 2);
+		RenderShader.SetMatrix4("u_ViewProjection", Camera.GetViewProjection());
+		RenderShader.SetMatrix4("u_Projection", Camera.GetProjectionMatrix());
+		RenderShader.SetMatrix4("u_View", Camera.GetViewMatrix());
+		RenderShader.SetMatrix4("u_InverseProjection", glm::inverse(Camera.GetProjectionMatrix()));
+		RenderShader.SetMatrix4("u_InverseView", glm::inverse(Camera.GetViewMatrix()));
+		RenderShader.SetFloat("u_Width", float(app.GetWidth()));
+		RenderShader.SetFloat("u_Height", float(app.GetHeight()));
 
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_CUBE_MAP, Skymap.GetID());
@@ -250,6 +360,26 @@ void Candela::StartPipeline()
 		ScreenQuadVAO.Bind();
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		ScreenQuadVAO.Unbind();
+
+		RecordingFBO.Unbind();
+
+		// Render to screen
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glViewport(0, 0, app.GetWidth(), app.GetHeight());
+
+		BlitShader.Use();
+		BlitShader.SetInteger("u_Texture", 0);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, RecordingFBO.GetTexture());
+
+		ScreenQuadVAO.Bind();
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		ScreenQuadVAO.Unbind();
+
+		if (PlayingRecording) {
+			SaveFBOToJPG(RecordingFBO.GetFramebuffer(), 1920, 1080, Playframe);
+		}
 
 		// Finish 
 
@@ -264,9 +394,18 @@ void Candela::StartPipeline()
 			WindowResizedThisFrame = false;
 		}
 
-		GLClasses::DisplayFrameRate(app.GetWindow(), "Candela");
+		std::string Title = "Candela | " + std::to_string(glfwGetTime()) + " | ";
+		if (PlayingRecording) {
+			Title += "Playing Recording, frame : " + std::to_string(Playframe) + " | " + (std::to_string(100.*float(Playframe)/float(RecordingCameras.size())) + "% | ");
+		}
+		else if (StartRecording) {
+			Title += "Recording, frame : " + std::to_string(RecordingCameras.size()) + " | ";
+		}
+		GLClasses::DisplayFrameRate(app.GetWindow(), Title);
 		
 	}
+
+
 }
 
 // End.

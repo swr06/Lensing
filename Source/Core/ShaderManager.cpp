@@ -7,6 +7,7 @@ static std::unordered_map<std::string, GLClasses::ComputeShader> ShaderManager_S
 void Candela::ShaderManager::CreateShaders()
 {
 	AddShader("BASIC_BLIT", "Core/Shaders/FBOVert.glsl", "Core/Shaders/BasicBlit.glsl");
+	AddShader("RENDER", "Core/Shaders/FBOVert.glsl", "Core/Shaders/Render.glsl");
 }
 
 void Candela::ShaderManager::AddShader(const std::string& name, const std::string& vert, const std::string& frag, const std::string& geo)

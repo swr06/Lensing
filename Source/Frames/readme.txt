@@ -1,0 +1,1 @@
+after rendering frames (F3 for recording and F4 to play it back/save it), run the python script to generate an mp4 out of it
